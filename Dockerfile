@@ -9,7 +9,7 @@ RUN apt-get update \
     && ln -fs /usr/share/zoneinfo/America/Fortaleza /etc/localtime \
     && dpkg-reconfigure tzdata 
 
-
+ENV TZ=America/Fortaleza
 RUN useradd --create-home -s /bin/bash teste \
         && echo teste:ubuntu | chpasswd
 WORKDIR /home/$user
