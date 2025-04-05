@@ -1,0 +1,61 @@
+name: Projeto
+run-name: ${{ github.actor }}
+on:
+  release:
+    types: [created]
+
+jobs:
+  Projeto-DefesaContainer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem Docker (base Ubuntu)
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/projetodefesa:${{ github.event.release.tag_name }} .
+
+      - name: Scan Dockle (CIS Benchmark)
+        uses: goodwithtech/dockle-action@v0.4.15
+        with:
+          image: '${{ secrets.DOCKER_USERNAME }}/projetodefesa:${{ github.event.release.tag_name }}'
+          format: 'list'
+          exit-code: '1'
+          exit-level: 'fatal'
+          accept-key: 'org.opencontainers.image.version,org.opencontainers.image.ref.name,TZ'
+
+
+      - name: Scan Trivy (vulnerabilidades e segredos)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/projetodefesa:${{ github.event.release.tag_name }}'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+          ignore-unfixed: 'true'
+          vuln-type: 'os,library'
+          scanners: 'vuln,secret'
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push da imagem para o Docker Hub
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/projetodefesa:${{ github.event.release.tag_name }}
+
+      - name: Obter digest da imagem
+        run: |
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ secrets.DOCKER_USERNAME }}/projetodefesa:${{ github.event.release.tag_name }})
+          echo "DIGEST=$DIGEST" >> $GITHUB_ENV
+
+      - name: Instalar Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Assinar a imagem com Cosign
+        run: |
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          cosign sign --yes --key cosign.key $DIGEST
